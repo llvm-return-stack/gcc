@@ -781,4 +781,7 @@ DW_CFA (DW_CFA_GNU_window_save, 0x2d)
 DW_CFA (DW_CFA_GNU_args_size, 0x2e)
 DW_CFA (DW_CFA_GNU_negative_offset_extended, 0x2f)
 
+/* Return stack extension.  */
+DW_CFA (DW_CFA_def_rsp_offset, 0x30)
+
 DW_END_CFA

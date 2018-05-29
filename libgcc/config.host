@@ -73,6 +73,7 @@ tmake_file=
 tm_file=
 tm_define=
 md_unwind_header=no-unwind.h
+md_unwind_rs=no-unwind-rs.h
 unwind_header=unwind-generic.h
 
 # Set default cpu_type so it can be updated in each machine entry.
@@ -346,6 +347,7 @@ aarch64*-*-freebsd*)
 aarch64*-*-linux*)
 	extra_parts="$extra_parts crtfastmath.o"
 	md_unwind_header=aarch64/linux-unwind.h
+  md_unwind_rs=aarch64/unwind-rs.h
 	tmake_file="${tmake_file} ${cpu_type}/t-aarch64"
 	tmake_file="${tmake_file} ${cpu_type}/t-softfp t-softfp t-crtfm"
 	;;
@@ -631,6 +633,7 @@ x86_64-*-linux*)
 	tmake_file="${tmake_file} i386/t-crtpc t-crtfm i386/t-crtstuff t-dfprules"
 	tm_file="${tm_file} i386/elf-lib.h"
 	md_unwind_header=i386/linux-unwind.h
+  md_unwind_rs=i386/unwind-rs.h
 	;;
 x86_64-*-kfreebsd*-gnu)
 	extra_parts="$extra_parts crtprec32.o crtprec64.o crtprec80.o crtfastmath.o"

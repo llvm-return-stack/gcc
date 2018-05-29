@@ -558,6 +558,7 @@ AC_SUBST(asm_hidden_op)
 AC_SUBST(enable_execute_stack)
 AC_SUBST(unwind_header)
 AC_SUBST(md_unwind_header)
+AC_SUBST(md_unwind_rs)
 AC_SUBST(sfp_machine_header)
 AC_SUBST(thread_header)
 

@@ -22,6 +22,8 @@
    see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    <http://www.gnu.org/licenses/>.  */
 
+#include <stdbool.h>
+
 #include "tconfig.h"
 #include "tsystem.h"
 #include "coretypes.h"
@@ -35,6 +37,7 @@
 #include "unwind-pe.h"
 #include "unwind-dw2-fde.h"
 #include "gthr.h"
+#include "md-unwind-rs.h"
 #include "unwind-dw2.h"
 
 #ifdef HAVE_SYS_SDT_H
@@ -130,6 +133,12 @@ struct _Unwind_Context
   _Unwind_Context_Reg_Val reg[__LIBGCC_DWARF_FRAME_REGISTERS__+1];
   void *cfa;
   void *ra;
+#ifdef __LIBGCC_UNWIND_WITH_RETURN_STACK__
+  /* True if this frame stores its return address on the return stack.  */
+  bool has_rs;
+  /* Offset from the top of the return stack to the frame's return address.  */
+  _Unwind_Word rsp_offset;
+#endif
   void *lsda;
   struct dwarf_eh_bases bases;
   /* Signal frame context.  */
@@ -982,6 +991,15 @@ execute_cfa_program (const unsigned char *insn_ptr,
 	}
       else switch (insn)
 	{
+#ifdef __LIBGCC_UNWIND_WITH_RETURN_STACK__
+  case DW_CFA_def_rsp_offset:
+    {
+      context->has_rs = true;
+	    insn_ptr = read_uleb128 (insn_ptr, &utmp);
+      fs->regs.rsp_offset = utmp;
+    }
+    break;
+#endif
 	case DW_CFA_set_loc:
 	  {
 	    _Unwind_Ptr pc;
@@ -1242,6 +1260,9 @@ uw_frame_state_for (struct _Unwind_Context *context, _Unwind_FrameState *fs)
   memset (fs, 0, sizeof (*fs));
   context->args_size = 0;
   context->lsda = 0;
+#ifdef __LIBGCC_UNWIND_WITH_RETURN_STACK__
+  context->has_rs = false;
+#endif
 
   if (context->ra == 0)
     return _URC_END_OF_STACK;
@@ -1435,6 +1456,12 @@ uw_update_context_1 (struct _Unwind_Context *context, _Unwind_FrameState *fs)
     }
   context->cfa = cfa;
 
+#ifdef __LIBGCC_UNWIND_WITH_RETURN_STACK__
+  /* Update the frame's return stack pointer offset.  */
+  if (context->has_rs)
+    context->rsp_offset += fs->regs.rsp_offset;
+#endif
+
   /* Compute the addresses of all registers saved in this frame.  */
   for (i = 0; i < __LIBGCC_DWARF_FRAME_REGISTERS__ + 1; ++i)
     switch (fs->regs.reg[i].how)
@@ -1444,8 +1471,22 @@ uw_update_context_1 (struct _Unwind_Context *context, _Unwind_FrameState *fs)
 	break;
 
       case REG_SAVED_OFFSET:
-	_Unwind_SetGRPtr (context, i,
-			  (void *) (cfa + fs->regs.reg[i].loc.offset));
+#ifdef __LIBGCC_UNWIND_WITH_RETURN_STACK__
+  /* If the frame stores its return address on the return stack,
+     restore it from there.  */
+  if (context->has_rs && i == PC_REGNUM) {
+    void *rsp;
+    asm_read_rsp(rsp);
+	  _Unwind_SetGRPtr (context, i,
+  			  (void *) (rsp + context->rsp_offset + fs->regs.reg[i].loc.offset));
+    rsp = NULL;
+  } else {
+#endif
+	  _Unwind_SetGRPtr (context, i,
+			    (void *) (cfa + fs->regs.reg[i].loc.offset));
+#ifdef __LIBGCC_UNWIND_WITH_RETURN_STACK__
+  }
+#endif
 	break;
 
       case REG_SAVED_REG:
@@ -1674,6 +1715,35 @@ uw_install_context_1 (struct _Unwind_Context *current,
       void *t = (void *) (_Unwind_Internal_Ptr)target->reg[i];
 
       gcc_assert (current->by_value[i] == 0);
+#ifdef __LIBGCC_UNWIND_WITH_RETURN_STACK__
+      if (i == RSP_REGNUM) {
+        if (target->has_rs) {
+          /* For functions with a return stack, adjust the RSP by the given
+            offset.  */
+          asm_adjust_rsp(target->rsp_offset);
+        } else if (t != NULL) {
+          /* When libgcc is compiled with -ffixed-RSP, the RSP register is
+             not saved in the current context, hence the original code below
+             will never restore it.  Therefore, we handle this case here and
+             restore the register manually.  */
+          if (target->by_value[i]) {
+            if (dwarf_reg_size_table[i] == sizeof (_Unwind_Word)) {
+              asm_write_rsp((_Unwind_Word *)t);
+            } else {
+              gcc_assert (dwarf_reg_size_table[i] == sizeof (_Unwind_Ptr));
+              asm_write_rsp((_Unwind_Internal_Ptr *)t);
+            }
+          } else {
+            if (dwarf_reg_size_table[i] == sizeof (_Unwind_Word)) {
+              asm_write_rsp(*(_Unwind_Word *)t);
+            } else {
+              gcc_assert (dwarf_reg_size_table[i] == sizeof (_Unwind_Ptr));
+              asm_write_rsp(*(_Unwind_Internal_Ptr *)t);
+            }
+          }
+        }
+      } else
+#endif
       if (target->by_value[i] && c)
 	{
 	  _Unwind_Word w;
@@ -1715,6 +1785,18 @@ uw_install_context_1 (struct _Unwind_Context *current,
 static inline _Unwind_Ptr
 uw_identify_context (struct _Unwind_Context *context)
 {
+#ifdef __LIBGCC_UNWIND_WITH_RETURN_STACK__
+  /* Because return stack-enabled functions may have completely empty stack
+     frames, the CFA cannot be used to differentiate between them.  But, the
+     RSP offset can be used instead.  */
+  if (context->has_rs) {
+    if (__LIBGCC_STACK_GROWS_DOWNWARD__)
+      return (_Unwind_Ptr)(context->rsp_offset - _Unwind_IsSignalFrame (context));
+    else
+      return (_Unwind_Ptr)(context->rsp_offset + _Unwind_IsSignalFrame (context));
+  }
+#endif
+
   /* The CFA is not sufficient to disambiguate the context of a function
      interrupted by a signal before establishing its frame and the context
      of the signal itself.  */

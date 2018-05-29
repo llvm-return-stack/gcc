@@ -51,6 +51,11 @@ typedef struct
     /* Used to implement DW_CFA_remember_state.  */
     struct frame_state_reg_info *prev;
 
+#ifdef __LIBGCC_UNWIND_WITH_RETURN_STACK__
+    /* Offset for the return stack pointer.  */
+    _Unwind_Sword rsp_offset;
+#endif
+
     /* The CFA can be described in terms of a reg+offset or a
        location expression.  */
     _Unwind_Sword cfa_offset;

@@ -46,6 +46,7 @@ with_aix_soname = @with_aix_soname@
 enable_execute_stack = @enable_execute_stack@
 unwind_header = @unwind_header@
 md_unwind_header = @md_unwind_header@
+md_unwind_rs = @md_unwind_rs@
 sfp_machine_header = @sfp_machine_header@
 thread_header = @thread_header@
 
@@ -351,13 +352,15 @@ SHLIBUNWIND_INSTALL =
 
 # Create links to files specified in config.host.
 LIBGCC_LINKS = enable-execute-stack.c unwind.h md-unwind-support.h \
-               sfp-machine.h gthr-default.h
+               md-unwind-rs.h sfp-machine.h gthr-default.h
 
 enable-execute-stack.c: $(srcdir)/$(enable_execute_stack)
 	-$(LN_S) $< $@
 unwind.h: $(srcdir)/$(unwind_header)
 	-$(LN_S) $< $@
 md-unwind-support.h: $(srcdir)/config/$(md_unwind_header)
+	-$(LN_S) $< $@
+md-unwind-rs.h: $(srcdir)/config/$(md_unwind_rs)
 	-$(LN_S) $< $@
 sfp-machine.h: $(srcdir)/config/$(sfp_machine_header)
 	-$(LN_S) $< $@
